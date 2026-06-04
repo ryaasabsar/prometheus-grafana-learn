@@ -1,4 +1,26 @@
 services:
+  server-a:
+    build:
+      context: ./api
+    container_name: server-a
+    environment:
+      SERVER_NAME: server-a
+    ports:
+      - "8001:8000"
+    cpus: "0.50"
+    mem_limit: 256m
+
+  server-b:
+    build:
+      context: ./api
+    container_name: server-b
+    environment:
+      SERVER_NAME: server-b
+    ports:
+      - "8002:8000"
+    cpus: "0.50"
+    mem_limit: 256m
+
   prometheus:
     image: prom/prometheus
     container_name: prometheus
