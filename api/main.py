@@ -1,42 +1,64 @@
 import os
 import random
 import time
-from typing import Callable
+from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 
 SERVER_NAME = os.getenv("SERVER_NAME", "server")
+APP_VERSION = os.getenv("APP_VERSION", "local")
 START_TIME = time.time()
 
-REQUEST_COUNT = Counter(
+APP_INFO = Gauge(
+    "api_app_info",
+    "Static API application information.",
+    ["server", "version"],
+)
+HTTP_REQUESTS_TOTAL = Counter(
     "api_http_requests_total",
     "Total HTTP requests handled by the API.",
     ["server", "method", "path", "status"],
 )
-REQUEST_LATENCY = Histogram(
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
     "api_http_request_duration_seconds",
     "HTTP request latency in seconds.",
     ["server", "method", "path"],
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
 )
-UPTIME = Gauge(
+HTTP_REQUESTS_IN_PROGRESS = Gauge(
+    "api_http_requests_in_progress",
+    "HTTP requests currently being handled by the API.",
+    ["server", "method", "path"],
+)
+UPTIME_SECONDS = Gauge(
     "api_uptime_seconds",
     "Seconds since the API container started.",
     ["server"],
 )
 
 app = FastAPI(title=f"{SERVER_NAME} API")
+APP_INFO.labels(SERVER_NAME, APP_VERSION).set(1)
+
+
+def route_path(request: Request) -> str:
+    route = request.scope.get("route")
+    return route.path if route else request.url.path
 
 
 @app.middleware("http")
-async def record_metrics(request: Request, call_next: Callable) -> Response:
+async def record_metrics(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     if request.url.path == "/metrics":
         return await call_next(request)
 
+    path = route_path(request)
     start = time.perf_counter()
     status = "500"
+    HTTP_REQUESTS_IN_PROGRESS.labels(SERVER_NAME, request.method, path).inc()
 
     try:
         response = await call_next(request)
@@ -44,9 +66,9 @@ async def record_metrics(request: Request, call_next: Callable) -> Response:
         return response
     finally:
         elapsed = time.perf_counter() - start
-        path = request.scope.get("route").path if request.scope.get("route") else request.url.path
-        REQUEST_COUNT.labels(SERVER_NAME, request.method, path, status).inc()
-        REQUEST_LATENCY.labels(SERVER_NAME, request.method, path).observe(elapsed)
+        HTTP_REQUESTS_TOTAL.labels(SERVER_NAME, request.method, path, status).inc()
+        HTTP_REQUEST_DURATION_SECONDS.labels(SERVER_NAME, request.method, path).observe(elapsed)
+        HTTP_REQUESTS_IN_PROGRESS.labels(SERVER_NAME, request.method, path).dec()
 
 
 @app.get("/")
@@ -97,5 +119,5 @@ def error_endpoint() -> dict:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    UPTIME.labels(SERVER_NAME).set(time.time() - START_TIME)
+    UPTIME_SECONDS.labels(SERVER_NAME).set(time.time() - START_TIME)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
