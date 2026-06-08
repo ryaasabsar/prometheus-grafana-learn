@@ -28,6 +28,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-rules.yml:/etc/prometheus/prometheus-rules.yml
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -40,11 +41,46 @@ services:
     ports:
       - "9100:9100"
 
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
   grafana:
     image: grafana/grafana
     container_name: grafana
+    depends_on:
+      - prometheus
     ports:
       - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+
+  load-generator:
+    build:
+      context: ./loadgen
+    container_name: load-generator
+    depends_on:
+      - server-a
+      - server-b
+    environment:
+      TOTAL_DURATION_SECONDS: "7200"
+      REQUEST_INTERVAL_SECONDS: "1.0"
+      REQUEST_TIMEOUT_SECONDS: "3.0"
+      LOG_EVERY_SECONDS: "30"
+      MAX_WORKERS: "12"
+      RANDOM_SEED: "42"
+      SCENARIO_SCALE: "1.0"
 
 volumes:
   prometheus-data:
+  grafana-data:

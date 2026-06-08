@@ -1,0 +1,49 @@
+groups:
+  - name: api-availability
+    rules:
+      - alert: ApiServerDown
+        expr: up{job=~"api-server-a|api-server-b"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API target is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} for at least 1 minute."
+
+      - alert: ApiHighErrorRate
+        expr: 100 * sum(rate(api_http_requests_total{status=~"5.."}[5m])) by (server) / clamp_min(sum(rate(api_http_requests_total[5m])) by (server), 0.001) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API error rate is high for {{ $labels.server }}"
+          description: "{{ $labels.server }} is serving more than 20% 5xx responses over the last 5 minutes."
+
+      - alert: ApiHighP95Latency
+        expr: histogram_quantile(0.95, sum(rate(api_http_request_duration_seconds_bucket[5m])) by (le, server)) > 0.75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API latency is high for {{ $labels.server }}"
+          description: "{{ $labels.server }} has a p95 latency above 750ms over the last 5 minutes."
+
+  - name: api-efficiency
+    rules:
+      - alert: ApiCpuUnderutilized
+        expr: 100 * label_replace(sum(rate(process_cpu_seconds_total{job=~"api-server-a|api-server-b"}[15m])) by (instance), "server", "$1", "instance", "(server-[^:]+):.*") / 0.5 < 10
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "CPU allocation is mostly idle for {{ $labels.server }}"
+          description: "{{ $labels.server }} has used less than 10% of its allocated 0.5 CPU for 15 minutes."
+
+      - alert: ApiMemoryUnderutilized
+        expr: 100 * label_replace(max by (instance) (max_over_time(process_resident_memory_bytes{job=~"api-server-a|api-server-b"}[15m])), "server", "$1", "instance", "(server-[^:]+):.*") / 268435456 < 25
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Memory allocation is mostly idle for {{ $labels.server }}"
+          description: "{{ $labels.server }} has stayed below 25% of its allocated 256MiB for 15 minutes."

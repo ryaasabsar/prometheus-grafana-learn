@@ -3,6 +3,9 @@ global:
   evaluation_interval: 15s
   scrape_timeout: 10s
 
+rule_files:
+  - /etc/prometheus/prometheus-rules.yml
+
 scrape_configs:
   - job_name: "prometheus"
     static_configs:
@@ -11,6 +14,10 @@ scrape_configs:
   - job_name: "node-exporter"
     static_configs:
       - targets: ["node-exporter:9100"]
+
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
 
   - job_name: "api-server-a"
     scrape_interval: 5s
